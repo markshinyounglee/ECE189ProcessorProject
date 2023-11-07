@@ -35,10 +35,6 @@ module Fetch
 			instr2 <= {instructionMem[pc+4],instructionMem[pc+5],instructionMem[pc+6],instructionMem[pc+7]};
 			pc <= pc + 8'd8;
 		end
-		
-		$display("Instruction 1: %h", instr1);
-		$display("Instruction 2: %h", instr2);
-		$display("Finish: %b\n", finish);
 	end
 	
 endmodule

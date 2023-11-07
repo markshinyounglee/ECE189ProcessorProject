@@ -22,8 +22,13 @@ module tb_fetch(
 		#100;
         
 		// Add stimulus here
-		for(integer i = 0; i < 500; i++) begin
+		for(integer i = 0; i < 250; i++) begin
 			#10 clk = ~clk;
+			#10 clk = ~clk;
+			#10 		
+			$display("Instruction 1: %h", instr1);
+			$display("Instruction 2: %h", instr2);
+			$display("Finish: %b\n", finish);
 		end
 	end
       
