@@ -17,7 +17,7 @@ module Fetch
 		$readmemh("C:/Users/Brandon/OneDrive/Documents/Classes/ECEM116C/189/ECE189ProcessorProject/r-test-hex.txt", instructionMem);
 	end
 	
-	always@(negedge clk) begin
+	always@(posedge clk) begin
 		
 		if(instructionMem[pc] === 8'hxx || finish == 1'b1) begin
 			instr1 <= 32'b0;
