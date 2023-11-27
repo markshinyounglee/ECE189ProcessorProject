@@ -14,16 +14,18 @@ import instructionList::*;
 	output reg[6:0] opcode
 );
 
+	reg[11:0] rawImm;
+	ImmediateGenerator immgen(.inp(rawImm), .imm(imm));
+	
 	always_comb 
 	begin
-		reg[11:0] rawImm = 12'bz;
-		ImmediateGenerator(.inp(rawImm), .imm(imm));
-		opcode = instructionset[6:0];
+		rawImm = 12'bz;
+		opcode = instructionSet[6:0];
 	
 		casex(opcode)
 			rtype:
 				begin
-					rawImm = 12'bz;
+					rawImm = 12'b0;
 					funct7 = instructionSet[31:25];
 					rs2 = instructionSet[24:20];
 					rs1 = instructionSet[19:15];
@@ -33,7 +35,8 @@ import instructionList::*;
 			itype:
 				begin
 					rawImm = instructionSet[31:20];
-					rs2 = 5'bz;
+					funct7 = 7'b0;
+					rs2 = 5'b0;
 					rs1 = instructionSet[19:15];
 					funct3 = instructionSet[14:12];
 					rd = instructionSet[11:7];
@@ -41,7 +44,8 @@ import instructionList::*;
 			lw:
 				begin
 					rawImm = instructionSet[31:20];
-					rs2 = 5'bz;
+					funct7 = 7'b0;
+					rs2 = 5'b0;
 					rs1 = instructionSet[19:15];
 					funct3 = instructionSet[14:12];
 					rd = instructionSet[11:7];
@@ -49,18 +53,20 @@ import instructionList::*;
 			sw:
 				begin
 					rawImm = {instructionSet[31:25], instructionSet[11:7]};
-					rs2 = 5'bz;
+					funct7 = 7'b0;
+					rs2 = instructionSet[24:20];
 					rs1 = instructionSet[19:15];
 					funct3 = instructionSet[14:12];
-					rd = 5'bz;
+					rd = 5'b0;
 				end
 			default:
 				begin
-					rawImm = 12'bz;
-					rs2 = 5'bz;
-					rs1 = 5'bz;
-					funct3 = 3'bz;
-					rd = 5'bz;
+					rawImm = 12'b0;
+					funct7 = 7'b0;
+					rs2 = 5'b0;
+					rs1 = 5'b0;
+					funct3 = 3'b0;
+					rd = 5'b0;
 				end
 		endcase
 	end
