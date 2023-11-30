@@ -14,7 +14,7 @@ module Fetch
 		instr2 = 0;
 		pc = 0;
 		finish = 0;
-		$readmemh("C:/Users/Brandon/OneDrive/Documents/Classes/ECEM116C/189/ECE189ProcessorProject/r-test-hex.txt", instructionMem);
+		$readmemh("./test_files/r-test-hex.txt", instructionMem);
 	end
 	
 	always@(posedge clk) begin
