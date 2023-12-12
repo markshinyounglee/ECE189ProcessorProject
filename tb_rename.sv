@@ -107,10 +107,13 @@ module tb_rename(
 			$display("Instruction 1 rd: %d", instr1_p_rd);
 			$display("Instruction 1 rs1: %d", instr1_p_rs1);
 			$display("Instruction 1 rs2: %d\n", instr1_p_rs2);
+			$display("Instruction 1 old rd: %d\n", instr1_p_old_rd);
 			
 			$display("Instruction 2 rd: %d", instr2_p_rd);
 			$display("Instruction 2 rs1: %d", instr2_p_rs1);
 			$display("Instruction 2 rs2: %d\n", instr2_p_rs2);
+			$display("Instruction 2 old rd: %d\n", instr2_p_old_rd);
+
 		end
 	end
       
