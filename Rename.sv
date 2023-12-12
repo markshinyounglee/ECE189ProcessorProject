@@ -1,14 +1,14 @@
 module Rename #(parameter NUM_PHYSICAL_REGISTERS = 64) (
 	input clk,
 	input[NUM_PHYSICAL_REGISTERS - 1:0] freePool,
-	input[5:0] rat[0:31],
-	input[4:0] instr1_rs1,
+	input[5:0] rat[0:31], // Register Alias Table
+	input[4:0] instr1_rs1, // architectural registers (x1 - x31)
 	input[4:0] instr1_rs2,
 	input[4:0] instr1_rd,
 	input[4:0] instr2_rs1,
 	input[4:0] instr2_rs2,
 	input[4:0] instr2_rd,
-	output reg[5:0] instr1_p_rs1,
+	output reg[5:0] instr1_p_rs1, // physical registers (p1 - p63)
 	output reg[5:0] instr1_p_rs2,
 	output reg[5:0] instr1_p_rd,
 	output reg[5:0] instr1_p_old_rd,
