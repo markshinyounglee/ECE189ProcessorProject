@@ -19,7 +19,6 @@ import instructionList::*;
 	
 	always_comb 
 	begin
-		rawImm = 12'bz;
 		opcode = instructionSet[6:0];
 	
 		casex(opcode)
