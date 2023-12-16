@@ -27,8 +27,17 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64)
 	input[6:0] instr2_funct7,
 	input[2:0] instr2_funct3,
 	
+	//FU output
+	input[31:0] fu_out[0:2],
+	input[31:0] fu_rob_out[0:2],
+	
 	output reg[63:0] new_reg_ready,	// 64-bit ready table
-	output reg[2:0] new_fu_ready
+	output reg[2:0] new_fu_ready,
+	
+	output reg[2:0] fu_operation[0:2];
+	output reg[5:0] fu_rob_inp[0:2];
+	output reg[31:0] fu_inp1[0:2];
+	output reg[31:0] fu_inp2[0:2];
 	
 );
 	
@@ -39,6 +48,14 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64)
 	
 	reg fu_roundrobin;
 	
+	reg[5:0] row_issue[0:2];
+	reg[2:0] issue;
+	reg[2:0] issue_flag;
+	
+	reg[5:0] row_clear[0:2];
+	reg[2:0] clear;
+
+
 	initial begin
 		new_fu_ready[0] = 1;
 		new_fu_ready[1] = 1;
@@ -56,25 +73,67 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64)
 	end
 	
 	always_comb begin
-		//Determine which row to insert entry
+		//Determine which rows to issue
+		row_issue[0] = 6'b0;
+		row_issue[1] = 6'b0;
+		row_issue[2] = 6'b0;
+		issue[0] = 0;
+		issue[1] = 0;
+		issue[2] = 0;
+		issue_flag = 0;
+		issue_flag = 0;
+		issue_flag = 0;
+		
+		for(integer i = 0; i < RS_ROW_COUNT; i++) begin
+			if(rstable.used[i] && rstable.ready1[i] && rstable.ready2[i] && fu_ready[rstable.fu[i]] && ~issue_flag[rstable.fu[i]]) begin
+				issue_flag[rstable.fu[i]] = 1;
+				issue[rstable.fu[i]] = 1;
+				row_issue[rstable.fu[i]] = i;
+			end
+		end
+		
+		//Determine which rows to insert entry
 		first_empty_flag = 0;
 		second_empty_flag = 0;
-		first_empty_row = 0;
-		second_empty_row = 0;
+		first_empty_row = 6'b0;
+		second_empty_row = 6'b0;
+	
 		for(integer i = 0; i < RS_ROW_COUNT; i++) begin
-			if(~rstable.used[i] && ~first_empty_flag && ~second_empty_flag) begin
+			if((~rstable.used[i] || (clear[0] && row_clear[0] == i) || (clear[1] && row_clear[1] == i) || (clear[2] && row_clear[2] == i)) && ~first_empty_flag && ~second_empty_flag) begin
 				first_empty_flag = 1;
 				first_empty_row = i;
 			end
-			else if(~rstable.used[i] && first_empty_flag && ~second_empty_flag) begin
+			else if((~rstable.used[i] || (clear[0] && row_clear[0] == i) || (clear[1] && row_clear[1] == i) || (clear[2] && row_clear[2] == i)) && first_empty_flag && ~second_empty_flag) begin
 				second_empty_flag = 1;
 				second_empty_row = i;
 			end
 		end
 	end	
 
+	//Issuing
+	always @(negedge clk) begin
+		for(integer i = 0; i < 3; i++) begin
+			if(issue[i]) begin
+				new_fu_ready[i] <= 0;
+				clear[i] <= 1;
+				row_clear[i] <= row_issue[i];
+				$display("Issued on FU %d with row %d\n", i, row_issue[i]);
+			end
+			else begin
+				clear[i] <= 0;
+			end
+		end
+	end
+	
 	always @(posedge clk) begin
-		//Instruction 1 insert
+		//Clear rows from issuing
+		for(integer i = 0; i < 3; i++) begin
+			if(clear[i] && row_clear[i] != first_empty_row && row_clear[i] != second_empty_row) begin
+				rstable.used[row_clear[i]] <= 0;
+			end
+		end
+		
+		//Instruction 1 dispatch
 		if(instr1_opcode != 7'b0) begin
 			$display("$d %d ", first_empty_row, instr1_p_rd);
 			rstable.used[first_empty_row] <= 1;
@@ -101,10 +160,12 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64)
 			rstable.imm[first_empty_row] <= instr1_imm;
 			rstable.rob[first_empty_row] <= next_robrow;
 			
-			new_reg_ready[instr1_p_rd] <= 0;
+			if(instr1_p_rd != 0) begin
+				new_reg_ready[instr1_p_rd] <= 0;
+			end
 		end
 		
-		//Instruction 2 Insert
+		//Instruction 2 Dispatch
 		if(instr2_opcode != 7'b0) begin
 			$display("%d %d\n", second_empty_row, instr2_p_rd);
 			rstable.used[second_empty_row] <= 1;
@@ -131,7 +192,9 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64)
 			rstable.imm[second_empty_row] <= instr2_imm;
 			rstable.rob[second_empty_row] <= next_robrow + 1;
 			
-			new_reg_ready[instr2_p_rd] <= 0;
+			if(instr2_p_rd != 0) begin
+				new_reg_ready[instr2_p_rd] <= 0;
+			end
 		end
 		
 		//Determine FU
@@ -157,7 +220,7 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64)
 			end
 		end
 		
-		//Forwarding and issuing
+		//Forwarding
 		for(integer i = 0; i < RS_ROW_COUNT; i++) begin
 			if(rstable.used[i]) begin
 				if(~rstable.ready1[i] && reg_ready[rstable.srcreg1[i]]) begin
@@ -168,11 +231,6 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64)
 				if(~rstable.ready2[i] && reg_ready[rstable.srcreg2[i]]) begin
 					rstable.ready2[i] <= 1;
 					rstable.srcreg2_data[i] <= dirty_regfile[rstable.srcreg2[i]];
-				end
-				if(rstable.ready1[i] && rstable.ready2[i] && fu_ready[rstable.fu[i]]) begin
-					$display("Issued: %d with FU:\n", i, rstable.fu[i]);
-					new_fu_ready[rstable.fu[i]] <= 0;
-					rstable.used[i] <= 0;
 				end
 			end
 		end
