@@ -7,7 +7,7 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64, parameter ROB_ROW_COUNT
 	input clk,
 	input[63:0] reg_ready, // 64-bit ready table
 	input[2:0] fu_ready,
-	
+	input finish_fetch,
 	// instruction 1
 	input[6:0] instr1_opcode, // from IDModule
 	input[5:0] instr1_p_rs1, // physical register from Rename
@@ -41,10 +41,11 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64, parameter ROB_ROW_COUNT
 	output reg[5:0] free_reg1,
 	output reg[5:0] free_reg2,
 	
-	output reg[31:0] clean_regfile[0:63]
+	output reg[31:0] clean_regfile[0:63],
+	output reg finish
 	
 );
-
+	reg finish_state;
 	reg[31:0] dirty_regfile[0:63];
 
 
@@ -96,6 +97,8 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64, parameter ROB_ROW_COUNT
 		
 		next_robrow = 0;
 		next_robretire = 0;
+		
+		finish = 0;
 	end
 	
 	always_comb begin
@@ -137,6 +140,7 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64, parameter ROB_ROW_COUNT
 	end	
 	
 	always @(posedge clk) begin
+		finish_state <= finish_fetch;
 		//Instruction 1 dispatch
 		if(instr1_opcode != 7'b0) begin
 			//RS Table insert
@@ -374,6 +378,10 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64, parameter ROB_ROW_COUNT
 		else begin
 			free_reg1 <= 0;
 			free_reg2 <= 0;
+		end
+		
+		if(finish_state && next_robretire == next_robrow) begin
+			finish <= 1;
 		end
 		
 	end

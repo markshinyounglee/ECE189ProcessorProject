@@ -109,6 +109,8 @@ module RISCV_CPU(
 	
 	reg[31:0] clean_regfile[0:63];
 	
+	reg finish_rs;
+	
 	assign reg_ready = rs_reg_ready;
 	assign fu_ready = rs_fu_ready;
 	
@@ -116,6 +118,7 @@ module RISCV_CPU(
 		.clk(clk),
 		.reg_ready(reg_ready),
 		.fu_ready(fu_ready),
+		.finish_fetch(finish_fetch),
 		.instr1_p_rs1(instr1_p_rs1),
 		.instr1_p_rs2(instr1_p_rs2),
 		.instr1_p_rd(instr1_p_rd),
@@ -140,7 +143,8 @@ module RISCV_CPU(
 		.fu_inp2(fu_inp2),
 		.free_reg1(free_reg1),
 		.free_reg2(free_reg2),
-		.clean_regfile(clean_regfile)
+		.clean_regfile(clean_regfile),
+		.finish(finish_rs)
 	);
 	
 	FU_ALU fu0(
@@ -171,22 +175,28 @@ module RISCV_CPU(
 		end
 	end
 	
+	reg[31:0] clk_count;
 	initial begin
 		// Initialize Inputs
 		clk = 0;
+		clk_count = 0;
 		// Wait 100 ns for global reset to finish
 		#100;
         
 		// Add stimulus here
-		for(integer i = 0; i < 64; i++) begin
+		for(integer i = 0; i < 250; i++) begin
 			#10 clk = ~clk;
 			#10 clk = ~clk; 
-
+			clk_count = clk_count + 1;
+			if(finish_rs) begin
+				break;
+			end
 		end
 		
 		for(integer i = 0; i < 10; i++) begin
 			$display("x%d = %d", i, clean_regfile[rat[i]]);
 		end
+		$display("Clock Count: %d", clk_count);
 	end
       
 endmodule
