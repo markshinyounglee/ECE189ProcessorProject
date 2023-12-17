@@ -1,12 +1,12 @@
 import instructionList::*;
 import RSTableROBStruct::*;
+import operationList::*;
 
-module ReservationStation #(parameter RS_ROW_COUNT = 64)
+module ReservationStation #(parameter RS_ROW_COUNT = 64, parameter ROB_ROW_COUNT = 64)
 (
 	input clk,
 	input[63:0] reg_ready, // 64-bit ready table
 	input[31:0] dirty_regfile[0:63],
-	input[5:0] next_robrow,
 	input[2:0] fu_ready,
 	
 	// instruction 1
@@ -17,6 +17,7 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64)
 	input[31:0] instr1_imm, // from IDModule
 	input[6:0] instr1_funct7,
 	input[2:0] instr1_funct3,
+	input[5:0] instr1_p_old_rd,
 	
 	// instruction 2
 	input[6:0] instr2_opcode, // from IDModule
@@ -26,18 +27,17 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64)
 	input[31:0] instr2_imm, // from IDModule
 	input[6:0] instr2_funct7,
 	input[2:0] instr2_funct3,
+	input[5:0] instr2_p_old_rd,
 	
 	//FU output
 	input[31:0] fu_out[0:2],
-	input[31:0] fu_rob_out[0:2],
 	
 	output reg[63:0] new_reg_ready,	// 64-bit ready table
 	output reg[2:0] new_fu_ready,
 	
-	output reg[2:0] fu_operation[0:2];
-	output reg[5:0] fu_rob_inp[0:2];
-	output reg[31:0] fu_inp1[0:2];
-	output reg[31:0] fu_inp2[0:2];
+	output reg[2:0] fu_operation[0:2],
+	output reg[31:0] fu_inp1[0:2],
+	output reg[31:0] fu_inp2[0:2]
 	
 );
 	
@@ -55,7 +55,20 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64)
 	reg[5:0] row_clear[0:2];
 	reg[2:0] clear;
 
+	reg[5:0] fu_rob_inp[0:2];
+	
+	reg[5:0] next_robrow;
+	reg[5:0] next_robretire;
 
+	struct{
+		reg used[ROB_ROW_COUNT-1:0];
+		reg[5:0] destreg[ROB_ROW_COUNT-1:0];
+		reg[5:0] old_destreg[ROB_ROW_COUNT-1:0];
+		reg[31:0] data[ROB_ROW_COUNT-1:0];
+		reg completed[ROB_ROW_COUNT-1:0];
+		reg sw[ROB_ROW_COUNT-1:0];
+	} rob;
+	
 	initial begin
 		new_fu_ready[0] = 1;
 		new_fu_ready[1] = 1;
@@ -64,12 +77,17 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64)
 		for(integer i = 0; i < RS_ROW_COUNT; i++) begin
 			rstable.used[i] = 0;
 		end
-		
+		for(integer i = 0; i < ROB_ROW_COUNT; i++) begin
+			rob.used[i] = 0;
+		end
 		for(integer i = 0; i < RS_ROW_COUNT; i++) begin
 			new_reg_ready[i] = 1;
 		end
 		
 		fu_roundrobin = 0;
+		
+		next_robrow = 0;
+		next_robretire = 0;
 	end
 	
 	always_comb begin
@@ -109,21 +127,6 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64)
 			end
 		end
 	end	
-
-	//Issuing
-	always @(negedge clk) begin
-		for(integer i = 0; i < 3; i++) begin
-			if(issue[i]) begin
-				new_fu_ready[i] <= 0;
-				clear[i] <= 1;
-				row_clear[i] <= row_issue[i];
-				$display("Issued on FU %d with row %d\n", i, row_issue[i]);
-			end
-			else begin
-				clear[i] <= 0;
-			end
-		end
-	end
 	
 	always @(posedge clk) begin
 		//Clear rows from issuing
@@ -135,7 +138,8 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64)
 		
 		//Instruction 1 dispatch
 		if(instr1_opcode != 7'b0) begin
-			$display("$d %d ", first_empty_row, instr1_p_rd);
+			//RS Table insert
+			$display("%d %d", first_empty_row, instr1_p_rd);
 			rstable.used[first_empty_row] <= 1;
 			rstable.op[first_empty_row] <= instr1_opcode;
 			rstable.funct7[first_empty_row] <= instr1_funct7;
@@ -163,10 +167,25 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64)
 			if(instr1_p_rd != 0) begin
 				new_reg_ready[instr1_p_rd] <= 0;
 			end
+			
+			//ROB Insert
+			rob.used[next_robrow] <= 1;
+			if(instr1_opcode != sw) begin
+				rob.destreg[next_robrow] <= instr1_p_rd;
+				rob.sw[next_robrow] <= 0;
+			end
+			else begin
+				rob.destreg[next_robrow] <= instr1_p_rs2;
+				rob.sw[next_robrow] <= 1;
+			end
+			rob.old_destreg[next_robrow] <= instr1_p_old_rd;
+			rob.completed[next_robrow] <= 0;
+			
 		end
 		
 		//Instruction 2 Dispatch
 		if(instr2_opcode != 7'b0) begin
+			//RS Table Insert
 			$display("%d %d\n", second_empty_row, instr2_p_rd);
 			rstable.used[second_empty_row] <= 1;
 			rstable.op[second_empty_row] <= instr2_opcode;
@@ -195,6 +214,29 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64)
 			if(instr2_p_rd != 0) begin
 				new_reg_ready[instr2_p_rd] <= 0;
 			end
+			
+			//ROB Insert
+			
+			rob.used[next_robrow + 1] <= 1;
+			if(instr2_opcode != sw) begin
+				rob.destreg[next_robrow + 1] <= instr2_p_rd;
+				rob.sw[next_robrow + 1] <= 0;
+			end
+			else begin
+				rob.destreg[next_robrow + 1] <= instr2_p_rs2;
+				rob.sw[next_robrow + 1] <= 1;
+			end
+			rob.old_destreg[next_robrow + 1] <= instr2_p_old_rd;
+			rob.completed[next_robrow + 1] <= 0;
+			
+		end
+		
+		//Update next row to insert rob
+		if(instr1_opcode != 7'b0 && instr2_opcode != 7'b0) begin
+			next_robrow <= next_robrow + 2;
+		end
+		else if(instr1_opcode != 7'b0) begin
+			next_robrow <= next_robrow + 1;
 		end
 		
 		//Determine FU
@@ -235,6 +277,63 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64)
 			end
 		end
 		
+		//Issue
+		for(integer i = 0; i < 3; i++) begin
+			if(issue[i]) begin
+				new_fu_ready[i] <= 0;
+				clear[i] <= 1;
+				row_clear[i] <= row_issue[i];
+				
+				//Setting FU outputs
+				fu_rob_inp[i] <= row_issue[i];
+				case(rstable.op[row_issue[i]])
+					rtype: begin
+						fu_inp1[i] <= rstable.srcreg1_data[row_issue[i]];
+						fu_inp2[i] <= rstable.srcreg2_data[row_issue[i]];
+						if(rstable.funct3[row_issue[i]] == 3'b000 && rstable.funct7[row_issue[i]] == 7'b0000000) begin
+							fu_operation[i] <= addop;
+						end
+						else if(rstable.funct3[row_issue[i]] == 3'b000 && rstable.funct7[row_issue[i]] == 7'b0100000) begin
+							fu_operation[i] <= subop;
+						end
+						else if(rstable.funct3[row_issue[i]] == 3'b100) begin
+							fu_operation[i] <= xorop;
+						end
+						else begin
+							fu_operation[i] <= sraop;
+						end
+					end
+					itype: begin
+						fu_inp1[i] <= rstable.srcreg1_data[row_issue[i]];
+						fu_inp2[i] <= rstable.imm[row_issue[i]];
+						if(rstable.funct3[row_issue[i]] == 3'b000) begin
+							fu_operation[i] <= addop;
+						end
+						else begin
+							fu_operation[i] <= andop;
+						end
+					end
+					lw: begin
+						fu_inp1[i] <= rstable.srcreg1_data[row_issue[i]];
+						fu_inp2[i] <= rstable.imm[row_issue[i]];
+						fu_operation[i] <= load;
+					end
+					sw: begin
+						fu_inp1[i] <= rstable.srcreg1_data[row_issue[i]];
+						fu_inp2[i] <= rstable.imm[row_issue[i]];
+						fu_operation[i] <= store;
+					end
+				endcase				
+				
+				$display("Issued on FU %d with row %d\n", i, row_issue[i]);
+			end
+			else begin
+				clear[i] <= 0;
+			end
+		end
+		//Complete
+
+		//Retire
 	end
 		
 	// pseudocode

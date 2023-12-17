@@ -5,6 +5,6 @@ module ImmediateGenerator
 );
 
 	// sign-extend upper bits, zero-pad lower bits
-	assign imm = {inp[11] == 1'b0 ? 20'hFFFF : 20'h0000, inp};
+	assign imm = {inp[11] == 1'b0 ? 20'h0000 : 20'hFFFF, inp};
 
 endmodule

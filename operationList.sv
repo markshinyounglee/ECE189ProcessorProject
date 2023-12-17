@@ -1,10 +1,11 @@
 // list of operations supported by ALU
 
 package operationList;
-	const reg[3:0] add = 4'b0;
-	const reg[3:0] sub = 4'b1;
-	const reg[3:0] andop = 4'b2;
-	const reg[3:0] orop = 4'b3;
-	const reg[3:0] load = 4'b4;
-	const reg[3:0] store = 4'b5;
+	const reg[2:0] addop = 0;
+	const reg[2:0] subop = 1;
+	const reg[2:0] andop = 2;
+	const reg[2:0] xorop = 3;
+	const reg[2:0] sraop = 4;
+	const reg[2:0] load = 5;
+	const reg[2:0] store = 6;
 endpackage

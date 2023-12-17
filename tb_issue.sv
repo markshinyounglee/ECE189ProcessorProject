@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
 
-module tb_dispatch(
+module tb_issue(
 	output reg[5:0] instr1_p_rs1,
 	output reg[5:0] instr1_p_rs2,
 	output reg[5:0] instr1_p_rd,
@@ -99,9 +99,14 @@ module tb_dispatch(
 	reg[63:0] rs_reg_ready;
 	reg[2:0] rs_fu_ready;
 	
-		
 	reg [31:0] dirty_regfile[0:63];
 	
+	reg[31:0] fu_out[0:2];
+	
+	reg[2:0] fu_operation[0:2];
+	reg[31:0] fu_inp1[0:2];
+	reg[31:0] fu_inp2[0:2];
+		
 	assign reg_ready = rs_reg_ready;
 	assign fu_ready = rs_fu_ready;
 	
@@ -119,18 +124,39 @@ module tb_dispatch(
 		.instr1_imm(instr1_imm),
 		.instr1_funct3(instr1_funct3),
 		.instr1_funct7(instr1_funct7),
+		.instr1_p_old_rd(instr1_p_old_rd),
 		.instr1_opcode(instr1_opcode),
 		.instr2_imm(instr2_imm),
 		.instr2_funct3(instr2_funct3),
 		.instr2_funct7(instr2_funct7),
+		.instr2_p_old_rd(instr2_p_old_rd),
 		.instr2_opcode(instr2_opcode),
+		.fu_out(fu_out),
 		.new_reg_ready(rs_reg_ready),
-		.new_fu_ready(rs_fu_ready)
+		.new_fu_ready(rs_fu_ready),
+		.fu_operation(fu_operation),
+		.fu_inp1(fu_inp1),
+		.fu_inp2(fu_inp2)
+	);
+	
+	FU_ALU fu0(
+		.operation(fu_operation[0]),
+		.inp1(fu_inp1[0]),
+		.inp2(fu_inp2[0]),
+		.outp(fu_out[0])
+	);
+	
+	FU_ALU fu1(
+		.operation(fu_operation[1]),
+		.inp1(fu_inp1[1]),
+		.inp2(fu_inp2[1]),
+		.outp(fu_out[1])
 	);
 	
 	initial begin
 		// Initialize Inputs
 		clk = 0;
+		dirty_regfile[0] = 32'b0;
 		// Wait 100 ns for global reset to finish
 		#100;
         
@@ -140,6 +166,7 @@ module tb_dispatch(
 			#10 clk = ~clk; 
 
 		end
+		$display("%d %d", fu_out[0], fu_out[1]);
 	end
       
 endmodule
