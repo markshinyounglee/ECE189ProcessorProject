@@ -179,6 +179,7 @@ import operationList::*;
 	
 	reg[31:0] fu2_address;
 	reg[31:0] lw_data;
+	reg[7:0] print_test;
 	ALUMem fu2(
 		.clk(clk),
 		.write_address1(write_address1),
@@ -191,7 +192,8 @@ import operationList::*;
 		.inp1(fu_inp1[2]),
 		.inp2(fu_inp2[2]),
 		.address(fu2_address),
-		.lw_data(lw_data)
+		.lw_data(lw_data),
+		.print_test(print_test)
 	);
 	
 	always_comb begin
@@ -232,6 +234,7 @@ import operationList::*;
 			$display("x%d = %d", i, clean_regfile[rat[i]]);
 		end
 		$display("Clock Count: %d", clk_count);
+		$display("MEM at address 4: %d", print_test);
 	end
       
 endmodule

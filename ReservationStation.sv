@@ -77,6 +77,7 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64, parameter ROB_ROW_COUNT
 	reg[5:0] next_robrow;
 	reg[5:0] next_robretire;
 	
+	reg[5:0] forward_reg[0:2];
 
 	//For SW, destreg is register to read and data is the address
 	struct{
@@ -128,7 +129,7 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64, parameter ROB_ROW_COUNT
 		issue_flag = 0;
 		
 		for(integer i = 0; i < RS_ROW_COUNT; i++) begin
-			if(rstable.used[i] && rstable.ready1[i] && rstable.ready2[i] && fu_ready[rstable.fu[i]] && ~issue_flag[rstable.fu[i]]) begin
+			if(rstable.used[i] && (rstable.ready1[i] || rstable.srcreg1[i] == forward_reg[0] || rstable.srcreg1[i] == forward_reg[1] || rstable.srcreg1[i] == forward_reg[2]) && (rstable.ready2[i] || rstable.srcreg2[i] == forward_reg[0] || rstable.srcreg2[i] == forward_reg[1] || rstable.srcreg2[i] == forward_reg[2]) && fu_ready[rstable.fu[i]] && ~issue_flag[rstable.fu[i]]) begin
 				issue_flag[rstable.fu[i]] = 1;
 				issue[rstable.fu[i]] = 1;
 				row_issue[rstable.fu[i]] = i;
@@ -332,8 +333,8 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64, parameter ROB_ROW_COUNT
 				fu_rob_inp[i] <= rstable.rob[row_issue[i]];
 				case(rstable.op[row_issue[i]])
 					rtype: begin
-						fu_inp1[i] <= rstable.srcreg1_data[row_issue[i]];
-						fu_inp2[i] <= rstable.srcreg2_data[row_issue[i]];
+						fu_inp1[i] <= (~rstable.ready1[row_issue[i]]) ? dirty_regfile[rstable.srcreg1[row_issue[i]]] : rstable.srcreg1_data[row_issue[i]];
+						fu_inp2[i] <= (~rstable.ready2[row_issue[i]]) ? dirty_regfile[rstable.srcreg2[row_issue[i]]] : rstable.srcreg2_data[row_issue[i]];
 						if(rstable.funct3[row_issue[i]] == 3'b000 && rstable.funct7[row_issue[i]] == 7'b0000000) begin
 							fu_operation[i] <= addop;
 						end
@@ -348,7 +349,7 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64, parameter ROB_ROW_COUNT
 						end
 					end
 					itype: begin
-						fu_inp1[i] <= rstable.srcreg1_data[row_issue[i]];
+						fu_inp1[i] <= (~rstable.ready1[row_issue[i]]) ? dirty_regfile[rstable.srcreg1[row_issue[i]]] : rstable.srcreg1_data[row_issue[i]];
 						fu_inp2[i] <= rstable.imm[row_issue[i]];
 						if(rstable.funct3[row_issue[i]] == 3'b000) begin
 							fu_operation[i] <= addop;
@@ -358,12 +359,12 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64, parameter ROB_ROW_COUNT
 						end
 					end
 					lw: begin
-						fu_inp1[i] <= rstable.srcreg1_data[row_issue[i]];
+						fu_inp1[i] <= (~rstable.ready1[row_issue[i]]) ? dirty_regfile[rstable.srcreg1[row_issue[i]]] : rstable.srcreg1_data[row_issue[i]];
 						fu_inp2[i] <= rstable.imm[row_issue[i]];
 						fu_operation[i] <= load;
 					end
 					sw: begin
-						fu_inp1[i] <= rstable.srcreg1_data[row_issue[i]];
+						fu_inp1[i] <= (~rstable.ready1[row_issue[i]]) ? dirty_regfile[rstable.srcreg1[row_issue[i]]] : rstable.srcreg1_data[row_issue[i]];
 						fu_inp2[i] <= rstable.imm[row_issue[i]];
 						fu_operation[i] <= store;
 					end
@@ -371,6 +372,7 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64, parameter ROB_ROW_COUNT
 				
 			end
 		end
+		
 		//Complete
 		for(integer i = 0; i < 3; i++) begin
 			if(fu_ready[i] == 0) begin
@@ -378,6 +380,7 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64, parameter ROB_ROW_COUNT
 					rob.data[fu_rob_inp[i]] <= fu_out[i];
 					rob.completed[fu_rob_inp[i]] <= 1;
 					new_fu_ready[i] <= 1;
+					forward_reg[i] <= 0;
 				end
 				else if(fu_operation[i] != load) begin
 					if(rob.destreg[fu_rob_inp[i]] != 0) begin
@@ -387,10 +390,12 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64, parameter ROB_ROW_COUNT
 					end
 					rob.completed[fu_rob_inp[i]] <= 1;
 					new_fu_ready[i] <= 1;
+					forward_reg[i] <= rob.destreg[fu_rob_inp[i]];
 				end
 				else begin
 					if(~fumem_state) begin
 						fumem_state <= 1;
+						forward_reg[i] <= 0;
 					end
 					else begin
 						if(rob.destreg[fu_rob_inp[i]] != 0) begin
@@ -400,12 +405,17 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64, parameter ROB_ROW_COUNT
 						end
 						rob.completed[fu_rob_inp[i]] <= 1;
 						new_fu_ready[i] <= 1;
+						forward_reg[i] <= rob.destreg[fu_rob_inp[i]];
 						
 						fumem_state <= 0;
 					end
 				end
 			end
+			else begin
+				forward_reg[i] <= 0;
+			end
 		end
+		
 		//Retire
 		if(rob.completed[next_robretire] && rob.used[next_robretire]) begin
 			rob.used[next_robretire] <= 0;
@@ -447,35 +457,5 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64, parameter ROB_ROW_COUNT
 		end
 		
 	end
-		
-	// pseudocode
-	/*
-	always_comb begin // most of issue including forwarding
-		for(integer i = 0; i < SIZE_OF_RT;i++) begin
-			if(table[i].valid == 1) begin
-				if(!table[i].rs1ready && ready[i]) begin // check for forwarding
-					forward data
-					set table[i].rs1ready to 1
-				if(!table[i].rs2ready && ready[i]) begin
-					forward data
-					set table[i].rs2ready to 1
-				if(table[i].rs1ready && table[i].rs2ready && table[i].fu && fuflag not set)begin
-					output = table[i] entries
-					flag fu is set
-					mark flag that row is not valid
-				end
-			end
-		end
-	end
-	
-	always@(posedge clk) begin // mostly dispatch
-		logic to insert entries
-		update ready
-		clear rs table entries in fu // issue
-	end
-	
-	*/
-	
-		
 	
 endmodule

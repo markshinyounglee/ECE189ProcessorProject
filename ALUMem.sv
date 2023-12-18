@@ -19,13 +19,15 @@ import operationList::*;
 	input[31:0] inp2,
 	
 	output reg[31:0] address,
-	output reg[31:0] lw_data
+	output reg[31:0] lw_data,
+	output reg[7:0] print_test
 );
 
 	reg[7:0] mem[0:1023];
 	
 	always_comb begin
 		address = inp1 + inp2;
+		print_test = mem[4];
 	end
 
 	always @(posedge clk) begin
