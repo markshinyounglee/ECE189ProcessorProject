@@ -20,13 +20,4 @@ package RSTableROBStruct;
 		reg[5:0] rob[RS_ROW_COUNT-1:0];
 	} rstable;
 	
-	/*struct{
-		reg valid[ROB_ROW_COUNT-1:0];
-		reg[5:0] rd[ROB_ROW_COUNT-1:0];
-		reg[5:0] old_destreg[ROB_ROW_COUNT-1:0];
-		reg[31:0] data[ROB_ROW_COUNT-1:0];
-		reg completed[ROB_ROW_COUNT-1:0];
-		reg is_sw[ROB_ROW_COUNT-1:0];
-	} robtable;*/
-	
 endpackage

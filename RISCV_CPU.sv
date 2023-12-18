@@ -1,6 +1,8 @@
 `timescale 1ns / 1ps
 
-module RISCV_CPU(
+module RISCV_CPU
+import operationList::*;
+(
 	output reg[5:0] instr1_p_rs1,
 	output reg[5:0] instr1_p_rs2,
 	output reg[5:0] instr1_p_rd,
@@ -114,6 +116,14 @@ module RISCV_CPU(
 	assign reg_ready = rs_reg_ready;
 	assign fu_ready = rs_fu_ready;
 	
+	reg[31:0] write_address1;
+	reg[31:0] write_data1;
+	reg we1;
+	
+	reg[31:0] write_address2;
+	reg[31:0] write_data2;
+	reg we2;
+	
 	ReservationStation rs(
 		.clk(clk),
 		.reg_ready(reg_ready),
@@ -141,6 +151,12 @@ module RISCV_CPU(
 		.fu_operation(fu_operation),
 		.fu_inp1(fu_inp1),
 		.fu_inp2(fu_inp2),
+		.write_address1(write_address1),
+		.write_data1(write_data1),
+		.we1(we1),
+		.write_address2(write_address2),
+		.write_data2(write_data2),
+		.we2(we2),
 		.free_reg1(free_reg1),
 		.free_reg2(free_reg2),
 		.clean_regfile(clean_regfile),
@@ -161,6 +177,23 @@ module RISCV_CPU(
 		.outp(fu_out[1])
 	);
 	
+	reg[31:0] fu2_address;
+	reg[31:0] lw_data;
+	ALUMem fu2(
+		.clk(clk),
+		.write_address1(write_address1),
+		.write_data1(write_data1),
+		.we1(we1),
+		.write_address2(write_address2),
+		.write_data2(write_data2),
+		.we2(we2),
+		.operation(fu_operation[2]),
+		.inp1(fu_inp1[2]),
+		.inp2(fu_inp2[2]),
+		.address(fu2_address),
+		.lw_data(lw_data)
+	);
+	
 	always_comb begin
 		for(integer i = 1; i < 64; i++) begin
 			if(free_reg1 == i) begin
@@ -173,6 +206,8 @@ module RISCV_CPU(
 				freePool[i] = re_freePool[i];
 			end
 		end
+		
+		fu_out[2] = (fu_operation[2] == load) ? lw_data : fu2_address;
 	end
 	
 	reg[31:0] clk_count;

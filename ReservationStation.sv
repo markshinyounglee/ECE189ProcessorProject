@@ -38,6 +38,16 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64, parameter ROB_ROW_COUNT
 	output reg[31:0] fu_inp1[0:2],
 	output reg[31:0] fu_inp2[0:2],
 	
+	//Mem FU input
+	output reg[31:0] write_address1,
+	output reg[31:0] write_data1,
+	output reg we1,
+	
+	output reg[31:0] write_address2,
+	output reg[31:0] write_data2,
+	output reg we2,
+	
+	//Registers to free from retire
 	output reg[5:0] free_reg1,
 	output reg[5:0] free_reg2,
 	
@@ -62,8 +72,11 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64, parameter ROB_ROW_COUNT
 	
 	reg[5:0] fu_rob_inp[0:2];
 	
+	reg fumem_state;
+	
 	reg[5:0] next_robrow;
 	reg[5:0] next_robretire;
+	
 
 	//For SW, destreg is register to read and data is the address
 	struct{
@@ -94,6 +107,7 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64, parameter ROB_ROW_COUNT
 		end
 		
 		fu_roundrobin = 0;
+		fumem_state = 0;
 		
 		next_robrow = 0;
 		next_robretire = 0;
@@ -127,15 +141,44 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64, parameter ROB_ROW_COUNT
 		first_empty_row = 6'b0;
 		second_empty_row = 6'b0;
 	
-		for(integer i = 0; i < RS_ROW_COUNT; i++) begin
-			if(~rstable.used[i] && ~first_empty_flag && ~second_empty_flag) begin
-				first_empty_flag = 1;
-				first_empty_row = i;
+		if(~rstable.used[next_robrow]) begin
+			first_empty_row = next_robrow;
+		end
+		
+		if(~rstable.used[next_robrow + 1]) begin
+			second_empty_row = next_robrow + 1;
+		end
+		
+		if(rstable.used[next_robrow] || rstable.used[next_robrow + 1]) begin
+			for(integer i = 0; i < RS_ROW_COUNT; i++) begin
+				if(~rstable.used[i] && ~first_empty_flag && ~second_empty_flag) begin
+					first_empty_flag = 1;
+					first_empty_row = i;
+				end
+				else if(~rstable.used[i] && first_empty_flag && ~second_empty_flag) begin
+					second_empty_flag = 1;
+					second_empty_row = i;
+				end
 			end
-			else if(~rstable.used[i] && first_empty_flag && ~second_empty_flag) begin
-				second_empty_flag = 1;
-				second_empty_row = i;
-			end
+		end
+		
+		//Write to mem from retire
+		write_address1 = 0;
+		write_data1 = 0;
+		we1 = 0;
+		write_address2 = 0;
+		write_data2 = 0;
+		we2 = 0;
+		
+		if(rob.used[next_robretire] && rob.sw[next_robretire]) begin
+			write_address1 = rob.data[next_robretire];
+			write_data1 = clean_regfile[rob.destreg[next_robretire]];
+			we1 = 1;
+		end
+		if(rob.used[next_robretire] && rob.completed[next_robretire] && rob.used[next_robretire + 1] && rob.sw[next_robretire + 1]) begin
+			write_address2 = rob.data[next_robretire + 1];
+			write_data2 = clean_regfile[rob.destreg[next_robretire + 1]];
+			we2 = 1;
 		end
 	end	
 	
@@ -144,7 +187,6 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64, parameter ROB_ROW_COUNT
 		//Instruction 1 dispatch
 		if(instr1_opcode != 7'b0) begin
 			//RS Table insert
-			$display("%d %d", first_empty_row, instr1_p_rd);
 			rstable.used[first_empty_row] <= 1;
 			rstable.op[first_empty_row] <= instr1_opcode;
 			rstable.funct7[first_empty_row] <= instr1_funct7;
@@ -191,7 +233,6 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64, parameter ROB_ROW_COUNT
 		//Instruction 2 Dispatch
 		if(instr2_opcode != 7'b0) begin
 			//RS Table Insert
-			$display("%d %d\n", second_empty_row, instr2_p_rd);
 			rstable.used[second_empty_row] <= 1;
 			rstable.op[second_empty_row] <= instr2_opcode;
 			rstable.funct7[second_empty_row] <= instr2_funct7;
@@ -328,45 +369,66 @@ module ReservationStation #(parameter RS_ROW_COUNT = 64, parameter ROB_ROW_COUNT
 					end
 				endcase				
 				
-				$display("Issued on FU %d with row %d\n", i, row_issue[i]);
 			end
 		end
 		//Complete
-		for(integer i = 0; i < 2; i++) begin
+		for(integer i = 0; i < 3; i++) begin
 			if(fu_ready[i] == 0) begin
-				if(rob.destreg[fu_rob_inp[i]] != 0) begin
+				if(fu_operation[i] == store) begin
 					rob.data[fu_rob_inp[i]] <= fu_out[i];
-					dirty_regfile[rob.destreg[fu_rob_inp[i]]] <= fu_out[i];
-					new_reg_ready[rob.destreg[fu_rob_inp[i]]] <= 1;
+					rob.completed[fu_rob_inp[i]] <= 1;
+					new_fu_ready[i] <= 1;
 				end
-				rob.completed[fu_rob_inp[i]] <= 1;
-				new_fu_ready[i] <= 1;
-				$display("Wrote to %d with output %d \n", rob.destreg[fu_rob_inp[i]], fu_out[i]);
+				else if(fu_operation[i] != load) begin
+					if(rob.destreg[fu_rob_inp[i]] != 0) begin
+						rob.data[fu_rob_inp[i]] <= fu_out[i];
+						dirty_regfile[rob.destreg[fu_rob_inp[i]]] <= fu_out[i];
+						new_reg_ready[rob.destreg[fu_rob_inp[i]]] <= 1;
+					end
+					rob.completed[fu_rob_inp[i]] <= 1;
+					new_fu_ready[i] <= 1;
+				end
+				else begin
+					if(~fumem_state) begin
+						fumem_state <= 1;
+					end
+					else begin
+						if(rob.destreg[fu_rob_inp[i]] != 0) begin
+							rob.data[fu_rob_inp[i]] <= fu_out[i];
+							dirty_regfile[rob.destreg[fu_rob_inp[i]]] <= fu_out[i];
+							new_reg_ready[rob.destreg[fu_rob_inp[i]]] <= 1;
+						end
+						rob.completed[fu_rob_inp[i]] <= 1;
+						new_fu_ready[i] <= 1;
+						
+						fumem_state <= 0;
+					end
+				end
 			end
 		end
 		//Retire
 		if(rob.completed[next_robretire] && rob.used[next_robretire]) begin
 			rob.used[next_robretire] <= 0;
-			free_reg1 <= rob.old_destreg[next_robretire];
 			if(~rob.sw[next_robretire]) begin
+				free_reg1 <= rob.old_destreg[next_robretire];
 				if(rob.destreg[next_robretire] != 0) begin
 					clean_regfile[rob.destreg[next_robretire]] <= rob.data[next_robretire];
 				end
 			end
 			else begin
-				//Write to mem
+				free_reg1 <= 0;
 			end
 			
 			if(rob.completed[next_robretire + 1] && rob.used[next_robretire + 1]) begin
 				rob.used[next_robretire + 1] <= 0;
-				free_reg2 <= rob.old_destreg[next_robretire + 1];
 				if(~rob.sw[next_robretire + 1]) begin
+					free_reg2 <= rob.old_destreg[next_robretire + 1];
 					if(rob.destreg[next_robretire + 1] != 0) begin
 						clean_regfile[rob.destreg[next_robretire + 1]] <= rob.data[next_robretire + 1];
 					end
 				end
 				else begin
-					//Write to mem
+					free_reg2 <= 0;
 				end
 				next_robretire <= next_robretire + 2;
 			end
